@@ -1,0 +1,87 @@
+// CryptoAssetManagement.js
+
+const axios = require('axios');
+const { ethers } = require('ethers');
+require('dotenv').config();
+
+class CryptoAssetManagement {
+    constructor() {
+        this.apiKey = process.env.COINMARKETCAP_API_KEY;
+        this.apiUrl = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest';
+        this.provider = new ethers.providers.JsonRpcProvider(process.env.ETH_PROVIDER_URL);
+        this.wallet = new ethers.Wallet(process.env.PRIVATE_KEY, this.provider);
+        this.portfolio = [];
+    }
+
+    addAsset(symbol, amount) {
+        const existingAsset = this.portfolio.find(asset => asset.symbol === symbol);
+        if (existingAsset) {
+            existingAsset.amount += amount;
+        } else {
+            this.portfolio.push({ symbol, amount });
+        }
+        console.log(`${amount} of ${symbol} added to the portfolio.`);
+    }
+
+    removeAsset(symbol, amount) {
+        const existingAsset = this.portfolio.find(asset => asset.symbol === symbol);
+        if (existingAsset) {
+            existingAsset.amount -= amount;
+            if (existingAsset.amount <= 0) {
+                this.portfolio = this.portfolio.filter(asset => asset.symbol !== symbol);
+                console.log(`${symbol} removed from the portfolio.`);
+            } else {
+                console.log(`${amount} of ${symbol} removed from the portfolio.`);
+            }
+        } else {
+            console.log(`${symbol} is not in the portfolio.`);
+        }
+    }
+
+    async fetchCurrentPrice(symbol) {
+        try {
+            const response = await axios.get(this.apiUrl, {
+                params: { symbol },
+                headers: { 'X-CMC_PRO_API_KEY': this.apiKey }
+            });
+            const price = response.data.data[symbol].quote.USD.price;
+            return price;
+        } catch (error) {
+            console.error(`Error fetching price for ${symbol}:`, error.message);
+            return null;
+        }
+    }
+
+    async getPortfolioValue() {
+        let totalValue = 0;
+        for (const asset of this.portfolio) {
+            const price = await this.fetchCurrentPrice(asset.symbol);
+            if (price !== null) {
+                const assetValue = asset.amount * price;
+                totalValue += assetValue;
+                console.log(`Value of ${asset.amount} ${asset.symbol}: $${assetValue.toFixed(2)}`);
+            }
+        }
+        console.log(`Total portfolio value: $${totalValue.toFixed(2)}`);
+        return totalValue;
+    }
+
+    async sendTransaction(to, amount) {
+        try {
+            const tx = {
+                to,
+                value: ethers.utils.parseEther(amount)
+            };
+            const transactionResponse = await this.wallet.sendTransaction(tx);
+            console.log(`Transaction sent: ${transactionResponse.hash}`);
+            await transactionResponse.wait();
+            console.log(`Transaction mined: ${transactionResponse.hash}`);
+            return transactionResponse.hash;
+        } catch (error) {
+            console.error('Error sending transaction:', error.message);
+            return null;
+        }
+    }
+}
+
+module.exports = CryptoAssetManagement;
